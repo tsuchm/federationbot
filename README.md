@@ -23,6 +23,7 @@ SP は，Let's Encrypt を利用して，サーバ証明書の取得・更新を
 ### Phase 1
 
 * SP 上で動作する federationbot は `/etc/letsencrypt/archive/hostname/` 以下を検索し，最新のサーバ証明書を得る．
+* SP のウェブサーバは，最新のサーバ証明書を使う，
 * 最新のサーバ証明書が IdP からダウンロードしたメタデータに含まれていない場合は，`shibboleth2.xml` を以下の状態にする．
 
 ```
