@@ -1,0 +1,81 @@
+<EntitiesDescriptor Name="https://<tmpl_var name="idphostname">/metadata/idp-metadata.xml"
+                    xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+                    xmlns:shibmd="urn:mace:shibboleth:metadata:1.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<!-- IdP: <tmpl_var name="idpid"> -->
+<EntityDescriptor entityID="<tmpl_var name="idpid">">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol
+						urn:mace:shibboleth:1.0
+						urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions>
+      <shibmd:Scope regexp="false"><tmpl_var name="domain"></shibmd:Scope>
+    </Extensions>
+
+    <KeyDescriptor>
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+	<ds:X509Data>
+	  <ds:X509Certificate>
+<tmpl_var name="idpcert">
+	  </ds:X509Certificate>
+	</ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+
+    <NameIDFormat>urn:mace:shibboleth:1.0:nameIdentifier</NameIDFormat>
+    <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDFormat>
+    <SingleSignOnService Binding="urn:mace:shibboleth:1.0:profiles:AuthnRequest" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/Shibboleth/SSO" />
+    
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/POST/SSO" />
+
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/Redirect/SSO" />
+
+  </IDPSSODescriptor>
+
+  <AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol
+							    urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions>
+      <shibmd:Scope regexp="false"><tmpl_var name="domain"></shibmd:Scope>
+    </Extensions>
+
+    <KeyDescriptor>
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+	<ds:X509Data>
+	  <ds:X509Certificate>
+<tmpl_var name="idpcert">
+	  </ds:X509Certificate>
+	</ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+
+    <AttributeService Binding="urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding"
+		      Location="https://<tmpl_var name="idphostname">/idp/profile/SAML1/SOAP/AttributeQuery"/>
+    
+    <AttributeService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP"
+		      Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/SOAP/AttributeQuery"/>
+    
+    <NameIDFormat>urn:mace:shibboleth:1.0:nameIdentifier</NameIDFormat>
+    <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDFormat>
+
+  </AttributeAuthorityDescriptor>
+
+  <!-- This is just information about the entity in human terms. -->
+  <Organization>
+    <OrganizationName xml:lang="en"><tmpl_var name="organization"></OrganizationName>
+    <OrganizationDisplayName xml:lang="en"><tmpl_var name="organization"></OrganizationDisplayName>
+    <OrganizationURL xml:lang="en">https://www.<tmpl_var name="domain">/</OrganizationURL>
+  </Organization>
+  <ContactPerson contactType="technical">
+    <GivenName>Administrators</GivenName>
+    <SurName><tmpl_var name="organization"></SurName>
+    <EmailAddress>webmaster@<tmpl_var name="domain"></EmailAddress>
+  </ContactPerson>
+  
+</EntityDescriptor>
+<!-- /IdP: <tmpl_var name="idpid"> -->
+
+</EntitiesDescriptor>

@@ -1,0 +1,295 @@
+#!/usr/bin/perl
+
+use Class::Struct;
+use File::Basename qw/ basename /;
+use File::Spec::Functions qw/ catfile /;
+use File::Temp qw/ tempfile /;
+use Getopt::Long qw/ :config no_ignore_case /;
+use HTML::Template;
+use LWP::UserAgent;
+use Time::ParseDate;
+use XML::Simple;
+use warnings;
+use strict;
+
+our $DOMAIN = 'example.jp';
+our $ORGANIZATION = 'Example Company';
+our $IDPHOSTNAME = sprintf( 'idp.%s', $DOMAIN );
+our $IDPID = sprintf( 'https://%s/idp/shibboleth', $IDPHOSTNAME );
+our $IDPCERTIFICATE;
+our $METADATAURL = sprintf( 'https://%s/metadata/example-federation.xml', $IDPHOSTNAME );
+our $MARGIN = 60 * 60 * 24 * 7;
+our $TEMPLATE = 'fed-metadata.tmpl';
+our @ADD;
+our @REMOVE;
+our $SPHOSTNAME;
+our $ARCHIVEDIR = '/etc/letsencrypt/archive';
+our $OUTPUT;
+
+&GetOptions( 'domain=s'		=> \$DOMAIN,
+	     'organization=s'	=> \$ORGANIZATION,
+	     'idphostname=s'	=> \$IDPHOSTNAME,
+	     'idpid=s'		=> \$IDPID,
+	     'idpcertificate=s'	=> \$IDPCERTIFICATE,
+	     'metadata=s'	=> \$METADATAURL,
+	     'margin=i'		=> \$MARGIN,
+	     'template=s'	=> \$TEMPLATE,
+	     'add=s@'		=> \@ADD,
+	     'remove=s@'	=> \@REMOVE,
+	     'sphostname=s'	=> \$SPHOSTNAME,
+	     'archivedir=s'	=> \$ARCHIVEDIR,
+	     'output=s'		=> \$OUTPUT );
+
+&struct( sp => { id => '$', keydescriptors => '$' } );
+
+sub sp::hostname {
+    my( $this ) = @_;
+    my $x = $this->id;
+    $x =~ s!\Ahttps://!! or die;
+    $x =~ s!\A([^/]+)/.*\Z!$1! or die;
+    $x;
+}
+
+&struct( certificate => { subject => '$',
+			  issuer => '$',
+			  start => '$',
+			  end => '$',
+			  serial => '$',
+			  altname => '$',
+			  pem => '$' } );
+
+sub certificate::data {
+    my( $this ) = @_;
+    my $data = $this->pem;
+    $data =~ s/\A-----BEGIN CERTIFICATE-----\s+//;
+    $data =~ s/\s+-----END CERTIFICATE-----\s+\Z//;
+    $data;
+}
+
+sub certificate::new_from_data {
+    my( $class, $data ) = @_;
+    $data =~ s/\A\s+/-----BEGIN CERTIFICATE-----\n/;
+    $data =~ s/\s+\Z/\n-----END CERTIFICATE-----\n/;
+    $class->new_from_pem( $data );
+}
+
+sub certificate::new_from_pem {
+    my( $class, $data ) = @_;
+    my( $fh, $filename ) = tempfile( 'certXXXXXXXX', UNLINK => 1 );
+    print $fh $data;
+    close $fh;
+    $class->new_from_file( $filename, $data );
+}
+
+sub certificate::new_from_file {
+    my( $class, $filename, $data ) = @_;
+    my $new = $class->new();
+    open( my $ph, "openssl x509 -in $filename -noout -serial -issuer -subject -dates -ext subjectAltName 2>/dev/null|" ) or die $!;
+    while( <$ph> ){
+	s/\s+\Z//;
+	if( s/\Aserial=// ){
+	    $new->serial( $_ );
+	} elsif( s/\Aissuer=// ){
+	    $new->issuer( $_ );
+	} elsif( s/\Asubject=// ){
+	    $new->subject( $_ );
+	} elsif( s/\AnotBefore=// ){
+	    $new->start( scalar( &parsedate( $_ ) ) );
+	} elsif( s/\AnotAfter=// ){
+	    $new->end( scalar( &parsedate( $_ ) ) );
+	} elsif( s/\A\s*DNS:// ){
+	    $new->altname( [ split( /,\s*DNS:/, $_ ) ] );
+	}
+    }
+    unless( $data ){
+	open( my $fh, '<', $filename ) or die $!;
+	$data = join( '', <$fh> );
+    }
+    $new->pem( $data );
+    if( $new->subject ){
+	$new;
+    } else {
+	undef;
+    }
+}
+
+sub current_sps {
+    my( $url ) = @_;
+    my $metadata = &get_metadata( $url );
+    my $xs = XML::Simple->new();
+    my $ref = $xs->XMLin( $metadata );
+    my @sp;
+    for my $entity ( @{$ref->{'EntityDescriptor'}} ){
+	my $id = $entity->{entityID};
+	my $sp = $entity->{'SPSSODescriptor'};
+	next unless $sp;
+	my @desc;
+	if ( ref $sp->{KeyDescriptor} eq 'ARRAY' ) {
+	    @desc = @{$sp->{KeyDescriptor}};
+	} else {
+	    push( @desc, $sp->{KeyDescriptor} );
+	}
+	my @cert;
+	for my $desc ( @desc ){
+	    my $new = certificate->new_from_data( $desc->{'ds:KeyInfo'}->{'ds:X509Data'}->{'ds:X509Certificate'} );
+	    if( $new ){
+		push( @cert, $new );
+	    } else {
+		warn sprintf( "Broken certificate in the using metadata: url=%s, entityID=%s", $url, $id );
+	    }
+	}
+	push( @sp, sp->new( id => $id, keydescriptors => \@cert ) );
+    }
+    @sp;
+}
+
+sub get_metadata {
+    my( $url ) = @_;
+    my $ua = LWP::UserAgent->new();
+    my $response = $ua->get( $url, verify_hostname => 1 );
+    $response->decoded_content;
+}
+
+sub get_certificate {
+    my( $hostname ) = @_;
+    open( my $ph, sprintf( 'echo|openssl s_client -connect %s:443 -verify 4 2>/dev/null|', $hostname ) ) or die $!;
+    my $data = '';
+    while( <$ph> ){
+	if( /^-----BEGIN CERTIFICATE-----$/../^-----END CERTIFICATE-----$/ ){
+	    $data .= $_;
+	}
+    }
+    certificate->new_from_pem( $data );
+}
+
+sub sp_cert_exists {
+    my( $sp, $cert ) = @_;
+    if( grep( $cert->issuer eq $_->issuer && $cert->serial eq $_->serial, @{$sp->keydescriptors} ) ){
+	1;
+    } else {
+	0;
+    }
+}
+
+sub sp_entities {
+    my $limit = time + $MARGIN;
+    my( @sp ) = &current_sps( $METADATAURL );
+    for my $sp ( @sp ){
+	if( my $cur = &get_certificate( $sp->hostname ) ){
+	    push( @{$sp->keydescriptors}, $cur ) unless &sp_cert_exists( $sp, $cur );
+	} else {
+	    warn sprintf( 'Failed to get the current certificate: id=%s', $sp->id );
+	}
+	my( @desc ) = grep( $_->end > $limit, @{$sp->keydescriptors} );
+	if ( @desc > 0 ) {
+	    $sp->keydescriptors( \@desc );
+	} else {
+	    warn sprintf( 'SP uses expired certificate(s): id=%s', $sp->id );
+	}
+    }
+    for my $id ( @ADD ){
+	my $new = sp->new( id => $id );
+	if( my $cert = &get_certificate( $new->hostname ) ){
+	    $new->keydescriptors( [ $cert ] );
+	    push( @sp, $new );
+	} else {
+	    warn sprintf( 'Failed to add the new SP: id=%s', $new->id );
+	}
+    }
+    my %remove;
+    for my $id ( @REMOVE ){
+	$remove{$id}++;
+    }
+    @sp = grep( ! $remove{$_->id}, @sp );
+    @sp;
+}
+
+sub keyfile {
+    my( $x ) = @_;
+    $x =~ s!/cert(\d+)\.pem\Z!/privkey$1.pem! or die;
+    $x;
+}
+
+sub sp_status_check {
+    my( $tmpl ) = @_;
+    my( $sp ) = grep( $_->hostname eq $SPHOSTNAME, &current_sps( $METADATAURL ) );
+    my $dir = &catfile( $ARCHIVEDIR, $SPHOSTNAME );
+    opendir( my $dh, $dir ) or die $!;
+    my( @certfile ) = map( $_->[1],
+			   sort( { $b->[0] <=> $a->[0] }
+				 map( m/\Acert(\d+)\.pem/ && [ $1, $_ ],
+				      grep( m/\Acert\d+\.pem/, readdir($dh) ) ) ) );
+    my $newcertfile = &catfile( $dir, shift @certfile );
+    my $newcert = certificate->new_from_file( $newcertfile )
+	|| die sprintf("Cannot open the newest certificate: file=%s", $newcertfile );
+
+    my $oldcertfile;
+    my $oldcert;
+    for my $file ( @certfile ){
+	$file = &catfile( $dir, $file );
+	my $cert = certificate->new_from_file( $file )
+	    || die sprintf("Cannot open the old certificate: file=%s", $file );
+	if( $sp and &sp_cert_exists( $sp, $cert ) ){
+	    $oldcertfile = $file;
+	    $oldcert = $cert;
+	    last;
+	}
+    }
+
+    if( $oldcert ){
+	if( &sp_cert_exists( $sp, $newcert ) ){
+	    $tmpl->param( credentials => [ { certfile => $newcertfile,
+					     keyfile => &keyfile($newcertfile),
+					     encrypt => 0 },
+					   { certfile => $oldcertfile,
+					     keyfile => &keyfile($oldcertfile),
+					     encrypt => 1 } ] );
+	} else {
+	    $tmpl->param( credentials => [ { certfile => $newcertfile,
+					     keyfile => &keyfile($newcertfile),
+					     encrypt => 1 },
+					   { certfile => $oldcertfile,
+					     keyfile => &keyfile($oldcertfile),
+					     encrypt => 0 } ] );
+	}
+    } else {
+	$tmpl->param( credentials => [] );
+	$tmpl->param( certfile => $newcertfile );
+	$tmpl->param( keyfile => &keyfile($newcertfile) );
+    }
+}
+
+sub main {
+    my $tmpl = HTML::Template->new( filename => $TEMPLATE, die_on_bad_params => 0 );
+    $tmpl->param( metadataurl => $METADATAURL );
+    $tmpl->param( metadatabasename => &basename($METADATAURL) );
+    $tmpl->param( domain => $DOMAIN );
+    $tmpl->param( organization => $ORGANIZATION );
+    $tmpl->param( idphostname => $IDPHOSTNAME );
+    $tmpl->param( idpid => $IDPID );
+    if( $SPHOSTNAME ){
+	$tmpl->param( hostname => $SPHOSTNAME );
+	&sp_status_check( $tmpl );
+    } else {
+	my $idpcert;
+	if( $IDPCERTIFICATE ){
+	    $idpcert = certificate->new_from_file( $IDPCERTIFICATE ) or die;
+	} else {
+	    $idpcert = &get_certificate( $IDPHOSTNAME ) or die;
+	}
+	$tmpl->param( idpcert => $idpcert->data );
+	$tmpl->param( sp_entities =>
+		      [ map( { hostname => $_->hostname,
+			       id => $_->id,
+			       keydescriptors => [ map( { data => $_->data }, @{$_->keydescriptors} ) ] },
+			     &sp_entities() ) ] );
+    }
+    if ( $OUTPUT ){
+	open( my $fh, '>', $OUTPUT ) or die $!;
+	print $fh $tmpl->output;
+    } else {
+	print $tmpl->output;
+    }
+}
+
+&main();

@@ -1,0 +1,145 @@
+<EntitiesDescriptor Name="<tmpl_var name="metadataurl">"
+                    xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+                    xmlns:shibmd="urn:mace:shibboleth:metadata:1.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<!-- IdP: <tmpl_var name="idpid"> -->
+<EntityDescriptor entityID="<tmpl_var name="idpid">">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol
+						urn:mace:shibboleth:1.0
+						urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions>
+      <shibmd:Scope regexp="false"><tmpl_var name="domain"></shibmd:Scope>
+    </Extensions>
+
+    <KeyDescriptor>
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+	<ds:X509Data>
+	  <ds:X509Certificate>
+<tmpl_var name="idpcert">
+	  </ds:X509Certificate>
+	</ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+
+    <NameIDFormat>urn:mace:shibboleth:1.0:nameIdentifier</NameIDFormat>
+    <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDFormat>
+    <SingleSignOnService Binding="urn:mace:shibboleth:1.0:profiles:AuthnRequest" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/Shibboleth/SSO" />
+    
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/POST/SSO" />
+
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" 
+			 Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/Redirect/SSO" />
+
+  </IDPSSODescriptor>
+
+  <AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol
+							    urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions>
+      <shibmd:Scope regexp="false"><tmpl_var name="domain"></shibmd:Scope>
+    </Extensions>
+
+    <KeyDescriptor>
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+	<ds:X509Data>
+	  <ds:X509Certificate>
+<tmpl_var name="idpcert">
+	  </ds:X509Certificate>
+	</ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+
+    <AttributeService Binding="urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding"
+		      Location="https://<tmpl_var name="idphostname">/idp/profile/SAML1/SOAP/AttributeQuery"/>
+    
+    <AttributeService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP"
+		      Location="https://<tmpl_var name="idphostname">/idp/profile/SAML2/SOAP/AttributeQuery"/>
+    
+    <NameIDFormat>urn:mace:shibboleth:1.0:nameIdentifier</NameIDFormat>
+    <NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDFormat>
+
+  </AttributeAuthorityDescriptor>
+
+  <!-- This is just information about the entity in human terms. -->
+  <Organization>
+    <OrganizationName xml:lang="en"><tmpl_var name="organization"></OrganizationName>
+    <OrganizationDisplayName xml:lang="en"><tmpl_var name="organization"></OrganizationDisplayName>
+    <OrganizationURL xml:lang="en">https://www.<tmpl_var name="domain">/</OrganizationURL>
+  </Organization>
+  <ContactPerson contactType="technical">
+    <GivenName>Administrators</GivenName>
+    <SurName><tmpl_var name="organization"></SurName>
+    <EmailAddress>webmaster@<tmpl_var name="domain"></EmailAddress>
+  </ContactPerson>
+  
+</EntityDescriptor>
+<!-- /IdP: <tmpl_var name="idpid"> -->
+
+<tmpl_loop name="sp_entities"><!-- SP: <tmpl_var name="hostname"> -->
+<EntityDescriptor entityID="<tmpl_var name="id">">
+  <!-- An SP supporting SAML 1 and 2 contains this element with protocol support as shown. -->
+  <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol
+                                               urn:oasis:names:tc:SAML:1.1:protocol">
+
+    <!-- Extension to permit the SP to receive IdP discovery responses. -->
+    <!--
+    <Extensions>
+      <idpdisc:DiscoveryResponse xmlns:idpdisc="urn:oasis:names:tc:SAML:profiles:SSO:idp-discovery-protocol"
+                                 index="1" Binding="urn:oasis:names:tc:SAML:profiles:SSO:idp-discovery-protocol"
+                                 Location="https://<tmpl_var name="hostname">/Shibboleth.sso/DS"/>
+    </Extensions>
+    -->
+
+    <tmpl_loop name="keydescriptors"><KeyDescriptor>
+      <ds:KeyInfo>
+        <ds:X509Data>
+          <ds:X509Certificate>
+<tmpl_var name="data">
+          </ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+</tmpl_loop>
+
+    <!--
+       This tells IdPs where and how to send authentication assertions. Mostly
+       the SP will tell the IdP what location to use in its request, but this
+       is how the IdP validates the location and also figures out which
+       SAML version/binding to use.
+      -->
+    <AssertionConsumerService index="1" isDefault="true"
+                              Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                              Location="https://<tmpl_var name="hostname">/Shibboleth.sso/SAML2/POST"/>
+    <AssertionConsumerService index="2"
+                              Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign"
+                              Location="https://<tmpl_var name="hostname">/Shibboleth.sso/SAML2/POST-SimpleSign"/>
+    <AssertionConsumerService index="3"
+                              Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact"
+                              Location="https://<tmpl_var name="hostname">/Shibboleth.sso/SAML2/Artifact"/>
+    <AssertionConsumerService index="4"
+                              Binding="urn:oasis:names:tc:SAML:1.0:profiles:browser-post"
+                              Location="https://<tmpl_var name="hostname">/Shibboleth.sso/SAML/POST"/>
+    <AssertionConsumerService index="5"
+                              Binding="urn:oasis:names:tc:SAML:1.0:profiles:artifact-01"
+                              Location="https://<tmpl_var name="hostname">/Shibboleth.sso/SAML/Artifact"/>
+  </SPSSODescriptor>
+
+  <!-- This is just information about the entity in human terms. -->
+  <Organization>
+    <OrganizationName xml:lang="en"><tmpl_var name="hostname"> SP</OrganizationName>
+    <OrganizationDisplayName xml:lang="en"><tmpl_var name="hostname"> SP</OrganizationDisplayName>
+    <OrganizationURL xml:lang="en">https://<tmpl_var name="hostname">/</OrganizationURL>
+  </Organization>
+  <ContactPerson contactType="technical">
+    <GivenName>Administrators</GivenName>
+    <SurName><tmpl_var name="hostname"></SurName>
+    <EmailAddress>webmaster@<tmpl_var name="hostname"></EmailAddress>
+  </ContactPerson>
+
+</EntityDescriptor>
+<!-- /SP: <tmpl_var name="hostname"> -->
+</tmpl_loop>
+</EntitiesDescriptor>
