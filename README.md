@@ -86,10 +86,10 @@ set -e
 
 hostname=`hostname --fqdn`
 confdir=/etc/shibboleth/
-tmplatefile=${confdir}/shibboleth2.tmpl
+templatefile=${confdir}/shibboleth2.tmpl
 xmlfile=${confdir}/shibboleth2.xml
 
-/usr/local/bin/federationbot --sphostname ${hostname} --template ${tmplatefile} --output ${xmlfile}.$$
+/usr/local/bin/federationbot --sphostname ${hostname} --template ${templatefile} --output ${xmlfile}.$$
 if ( cmp ${xmlfile} ${xmlfile}.$$ >/dev/null ); then
 	rm ${xmlfile}.$$
 else
