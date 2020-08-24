@@ -88,8 +88,9 @@ hostname=`hostname --fqdn`
 confdir=/etc/shibboleth/
 templatefile=${confdir}/shibboleth2.tmpl
 xmlfile=${confdir}/shibboleth2.xml
+metadataurl=https://idp.example.jp/metadata/example-federation.xml
 
-/usr/local/bin/federationbot --sphostname ${hostname} --template ${templatefile} --output ${xmlfile}.$$
+/usr/local/bin/federationbot --metadata ${metadataurl} --sphostname ${hostname} --template ${templatefile} --output ${xmlfile}.$$
 if ( cmp ${xmlfile} ${xmlfile}.$$ >/dev/null ); then
 	rm ${xmlfile}.$$
 else
@@ -100,6 +101,13 @@ fi
 
 ### IdP
 
+まず，federationbot の実行結果が，現用中のメタデータと一致するように，fed-metadata.tmpl と idp-metadata.tmpl を修正する．
+
+```
+federationbot --metadata https://idp.example.jp/metadata/example-federation.xml --idphostname idp.example.jp
+```
+
+次に，生成されたメタデータを実際の IdP に配置するスクリプトを書く．
 
 ## TODO
 
