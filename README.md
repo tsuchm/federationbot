@@ -61,3 +61,8 @@ SP は，Let's Encrypt を利用して，サーバ証明書の取得・更新を
 ```
 <CredentialResolver type="File" key="new-key.pem" certificate="new-cert.pem"/>
 ```
+
+
+## TODO
+
+1世代前の秘密鍵で，最新の公開鍵を署名する[対策](https://eclipsesource.com/blogs/2016/09/07/tutorial-code-signing-and-verification-with-openssl/)は必要だろうか．
