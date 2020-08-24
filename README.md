@@ -63,6 +63,43 @@ SP は，Let's Encrypt を利用して，サーバ証明書の取得・更新を
 <CredentialResolver type="File" key="new-key.pem" certificate="new-cert.pem"/>
 ```
 
+## Install
+
+### SP
+
+1. 必要なパッケージをインストールする．
+   * libhtml-template-perl
+   * libtime-parsedate-perl
+   * libxml-simple-perl
+   * libwww-perl
+   * libapache2-mod-shib2
+1. スクリプト本体とテンプレートファイルをインストールする．
+   * federationbot -> /usr/local/bin/federationbot
+   * shibboleth2.tmpl -> /etc/shibboleth/shibboleth2.tmpl
+1. 以下のような内容の `/etc/cron.daily/federationbot` を用意する．
+
+
+```
+#!/bin/sh
+
+set -e
+
+hostname=`hostname --fqdn`
+confdir=/etc/shibboleth/
+tmplatefile=${confdir}/shibboleth2.tmpl
+xmlfile=${confdir}/shibboleth2.xml
+
+/usr/local/bin/federationbot --sphostname ${hostname} --template ${tmplatefile} --output ${xmlfile}.$$
+if ( cmp ${xmlfile} ${xmlfile}.$$ >/dev/null ); then
+	rm ${xmlfile}.$$
+else
+	mv ${xmlfile}.$$ ${xmlfile}
+	systemctl restart shibd
+fi
+```
+
+### IdP
+
 
 ## TODO
 
