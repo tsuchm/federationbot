@@ -57,10 +57,11 @@ fi
 この段階で，`federationbot` が実行できるようになっているはずである．
 
 ```
-federationbot
+$ federationbot
 ```
 
 この実行結果が，現用中のメタデータと一致するように `fed-metadata.tmpl` を修正する．
+テンプレートファイルの記述には，[HTML::Template](https://metacpan.org/pod/HTML::Template) が使われている．
 
 最後に，生成されたメタデータを実際の IdP に配置するスクリプトを書く．
 筆者のサイトで使っているスクリプトを単純化したバージョンが `Makefile` にある．
