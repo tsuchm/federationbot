@@ -1,23 +1,17 @@
+# -*- Makefile -*-
+
 all: idp-metadata.xml fed-metadata.xml
 
-# If you hope to add a SP, invoke the following command:
-#	./federationbot --output fed-unsigned.xml --addsp SPID
-#
-# If you hope to remove a SP, invoke the following command:
-#	./federationbot --output fed-unsigned.xml --removesp SPID
-#
-# If you hope to add a certificate, invoke the following command:
-#	./federationbot --output fed-unsigned.xml --addcert CERTFILE
-#
-# If you hope to remove a certificate, invoke the following command:
-#	./federationbot --output fed-unsigned.xml --removecert CERTFILE
-#
-# After the above process, invoke `make` again.
+update:
+	$(MAKE) FORCETARGET=FORCE all
+
 fed-metadata.xml: fed-unsigned.xml example-shib-signer.key example-shib-signer.cer
 	sh sign.sh $< $@
+	xmllint --schema saml-schema-metadata-2.0.xsd --path `pwd`/schema --valid --noout $@ 2>&1 | egrep '^$@ validates$$'
 
-fed-unsigned.xml: FORCE
+fed-unsigned.xml: $(FORCETARGET)
 	perl federationbot --output $@
+	xmllint --schema saml-schema-metadata-2.0.xsd --path `pwd`/schema --valid --noout $@ 2>&1 | egrep '^$@ validates$$'
 
 FORCE:
 

@@ -1,17 +1,15 @@
 #!/bin/sh
 
+# Invoke the following commands to prepare the key to sign your metadata:
+#     openssl req -newkey rsa:2048 -keyout example-shib-signer.key -keyform PEM -out example-shib-signer.req -outform PEM
+#     openssl x509 -in example-shib-signer.req -out example-shib-signler.pem -req -signkey example-shib-signer.key -days 3650
+
 basename=example-shib-signer
 encrypted_keyfile=`dirname $0`/${basename}.key
 cerfile=`dirname $0`/${basename}.cer
 schemadir=`dirname $0`/schema
 
 PATH=/usr/bin:/bin
-
-if ( ! xmllint --schema saml-schema-metadata-2.0.xsd --path ${schemadir} --valid --noout ${1} 2>&1 | egrep -q "^${1} validates\$" )
-then
-    echo ${1} fails to validate 1>&2
-    exit 1
-fi
 
 tmpdir=`mktemp -d --tmpdir=/dev/shm signXXXXXXXX`
 test -d ${tmpdir} || exit 2
