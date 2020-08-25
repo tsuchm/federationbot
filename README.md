@@ -6,9 +6,85 @@
 
 本パッケージは，現在 proof of concept の状態である．
 
-## Assumption of this package
+## Install
 
-SP は，Let's Encrypt を利用して，サーバ証明書の取得・更新を自動化していること．
+### Install for SP
+
+1. 必要なパッケージをインストールする．
+   * libhtml-template-perl
+   * libtime-parsedate-perl
+   * libxml-simple-perl
+   * libwww-perl
+   * libapache2-mod-shib2
+1. スクリプト本体とテンプレートファイルをインストールする．
+   * federationbot -> /usr/local/bin/federationbot
+   * shibboleth2.tmpl -> /etc/shibboleth/shibboleth2.tmpl
+1. 以下のような内容の `/etc/cron.daily/federationbot` を用意する．
+
+```
+#!/bin/sh
+
+set -e
+
+hostname=`hostname --fqdn`
+confdir=/etc/shibboleth/
+templatefile=${confdir}/shibboleth2.tmpl
+xmlfile=${confdir}/shibboleth2.xml
+idpid=https://idp.example.jp/idp/shibboleth
+metadataurl=https://idp.example.jp/metadata/example-federation.xml
+
+/usr/local/bin/federationbot --sphostname ${hostname} --idpid ${idpid} --metadata ${metadataurl} --template ${templatefile} --output ${xmlfile}.$$
+if ( cmp ${xmlfile} ${xmlfile}.$$ >/dev/null ); then
+	rm ${xmlfile}.$$
+else
+	mv ${xmlfile}.$$ ${xmlfile}
+	systemctl restart shibd
+fi
+```
+
+### Install for IdP
+
+最初に，必要なパッケージをインストールする．
+
+* libhtml-template-perl
+* libtime-parsedate-perl
+* libxml-simple-perl
+* libwww-perl
+* libxml2-utils (xmllint を利用する場合)
+* opensaml-tools (samlsign を利用する場合)
+
+次に，サンプルの `federationbot.sample-conf` を各自の環境に合わせて編集し，`federationbot.conf` という名前で保存する．
+この段階で，`federationbot` が実行できるようになっているはずである．
+
+```
+federationbot
+```
+
+この実行結果が，現用中のメタデータと一致するように `fed-metadata.tmpl` を修正する．
+
+最後に，生成されたメタデータを実際の IdP に配置するスクリプトを書く．
+筆者のサイトで使っているスクリプトを単純化したバージョンが `Makefile` にある．
+
+
+## Maintenance of Metadata
+
+定期的(例えば，毎月1日と15日)に `federationbot` を実行して，メタデータを更新する，という使い方が想定されている．
+
+SP の証明書が Let's Encrypt で定期的に更新されている場合は，自動的に新バージョンの証明書を検出し，旧バージョンの証明書は破棄される．
+
+SP の証明書が手動更新されている場合は，適当なオプションを指定して `federationbot` を手動実行する必要がある．
+
+* `--addcert FILE`
+  * 指定された証明書を，当該証明書の主体者名と同一の主体者名の証明書を使っている SP に追加する．すなわち，`<KeyDescriptor>` が2つ並列に存在している状態になる．
+* `--removecert FILE`
+  * 指定された証明書を，当該証明書の主体者名と同一の主体者名の証明書を使っている SP から削除する．
+
+また，組織内フェデレーションの SP が変化する場合は，以下のオプションが利用できる．
+
+* `--addsp ID`
+  * 指定された ID を持つ SP を追加する．証明書は，SP 上で動作しているウェブサーバからダウンロードする．
+* `--removesp ID`
+  * 指定された ID を持つ SP を削除する．
 
 ## Automatic Procedure of Key Rollover
 
@@ -62,52 +138,6 @@ SP は，Let's Encrypt を利用して，サーバ証明書の取得・更新を
 ```
 <CredentialResolver type="File" key="new-key.pem" certificate="new-cert.pem"/>
 ```
-
-## Install
-
-### SP
-
-1. 必要なパッケージをインストールする．
-   * libhtml-template-perl
-   * libtime-parsedate-perl
-   * libxml-simple-perl
-   * libwww-perl
-   * libapache2-mod-shib2
-1. スクリプト本体とテンプレートファイルをインストールする．
-   * federationbot -> /usr/local/bin/federationbot
-   * shibboleth2.tmpl -> /etc/shibboleth/shibboleth2.tmpl
-1. 以下のような内容の `/etc/cron.daily/federationbot` を用意する．
-
-
-```
-#!/bin/sh
-
-set -e
-
-hostname=`hostname --fqdn`
-confdir=/etc/shibboleth/
-templatefile=${confdir}/shibboleth2.tmpl
-xmlfile=${confdir}/shibboleth2.xml
-metadataurl=https://idp.example.jp/metadata/example-federation.xml
-
-/usr/local/bin/federationbot --metadata ${metadataurl} --sphostname ${hostname} --template ${templatefile} --output ${xmlfile}.$$
-if ( cmp ${xmlfile} ${xmlfile}.$$ >/dev/null ); then
-	rm ${xmlfile}.$$
-else
-	mv ${xmlfile}.$$ ${xmlfile}
-	systemctl restart shibd
-fi
-```
-
-### IdP
-
-まず，federationbot の実行結果が，現用中のメタデータと一致するように，fed-metadata.tmpl と idp-metadata.tmpl を修正する．
-
-```
-federationbot --metadata https://idp.example.jp/metadata/example-federation.xml --idphostname idp.example.jp
-```
-
-次に，生成されたメタデータを実際の IdP に配置するスクリプトを書く．
 
 ## TODO
 
