@@ -1,5 +1,8 @@
 # -*- perl -*-
 
+# Edit this file to meet your site status, and rename this file to
+# `federationbot.conf'.
+
 $DOMAIN = 'example.jp';
 $ORGANIZATION = 'Example Organization';
 $IDPHOSTNAME = 'idp.example.jp';
