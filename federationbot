@@ -1,7 +1,9 @@
 #!/usr/bin/perl
 
 use Class::Struct;
-use File::Basename qw/ basename /;
+use Cwd qw/ abs_path /;
+use English qw/ $PROGRAM_NAME /;
+use File::Basename qw/ basename dirname /;
 use File::Spec::Functions qw/ catfile /;
 use File::Temp qw/ tempfile /;
 use Getopt::Long qw/ :config no_ignore_case /;
@@ -12,32 +14,38 @@ use XML::Simple;
 use warnings;
 use strict;
 
-our $DOMAIN = 'example.jp';
-our $ORGANIZATION = 'Example Company';
-our $IDPHOSTNAME = sprintf( 'idp.%s', $DOMAIN );
-our $IDPID = sprintf( 'https://%s/idp/shibboleth', $IDPHOSTNAME );
+our $DOMAIN;
+our $ORGANIZATION;
+our $IDPHOSTNAME;
+our $IDPID;
 our $IDPCERTIFICATE;
-our $METADATAURL = sprintf( 'https://%s/metadata/example-federation.xml', $IDPHOSTNAME );
+our $METADATAURL;
 our $MARGIN = 60 * 60 * 24 * 7;
 our $TEMPLATE = 'fed-metadata.tmpl';
-our @ADD;
-our @REMOVE;
+our @ADDSP;
+our @REMOVESP;
+our @ADDCERT;
+our @REMOVECERT;
 our $SPHOSTNAME;
 our $ARCHIVEDIR = '/etc/letsencrypt/archive';
+our $CONFFILE = &abs_path( &catfile( &dirname( $PROGRAM_NAME ), 'federationbot.conf' ) );
 our $OUTPUT;
 
 &GetOptions( 'domain=s'		=> \$DOMAIN,
 	     'organization=s'	=> \$ORGANIZATION,
 	     'idphostname=s'	=> \$IDPHOSTNAME,
 	     'idpid=s'		=> \$IDPID,
-	     'idpcertificate=s'	=> \$IDPCERTIFICATE,
+	     'idpcert=s'	=> \$IDPCERTIFICATE,
 	     'metadata=s'	=> \$METADATAURL,
 	     'margin=i'		=> \$MARGIN,
 	     'template=s'	=> \$TEMPLATE,
-	     'add=s@'		=> \@ADD,
-	     'remove=s@'	=> \@REMOVE,
+	     'addsp=s@'		=> \@ADDSP,
+	     'removesp=s@'	=> \@REMOVESP,
+	     'addcert=s@'	=> \@ADDCERT,
+	     'removecert=s@'	=> \@REMOVECERT,
 	     'sphostname=s'	=> \$SPHOSTNAME,
 	     'archivedir=s'	=> \$ARCHIVEDIR,
+	     'conffile=s'	=> \$CONFFILE,
 	     'output=s'		=> \$OUTPUT );
 
 &struct( sp => { id => '$', keydescriptors => '$' } );
@@ -176,32 +184,105 @@ sub sp_entities {
     my( @sp ) = &current_sps( $METADATAURL );
     for my $sp ( @sp ){
 	if( my $cur = &get_certificate( $sp->hostname ) ){
-	    push( @{$sp->keydescriptors}, $cur ) unless &sp_cert_exists( $sp, $cur );
+	    unless( &sp_cert_exists( $sp, $cur ) ){
+		unless( grep( $cur->subject eq $_->subject, @{$sp->keydescriptors} ) ){
+		    die sprintf( "Mismatch subject of certificate: id=%s\n", $sp->id );
+		}
+		push( @{$sp->keydescriptors}, $cur );
+	    }
 	} else {
-	    warn sprintf( 'Failed to get the current certificate: id=%s', $sp->id );
+	    warn sprintf( "Failed to get the current certificate: id=%s\n", $sp->id );
 	}
 	my( @desc ) = grep( $_->end > $limit, @{$sp->keydescriptors} );
-	if ( @desc > 0 ) {
+	if( @desc > 0 ){
 	    $sp->keydescriptors( \@desc );
 	} else {
-	    warn sprintf( 'SP uses expired certificate(s): id=%s', $sp->id );
+	    warn sprintf( "SP uses expired certificate(s): id=%s\n", $sp->id );
 	}
     }
-    for my $id ( @ADD ){
+    for my $id ( @ADDSP ){
 	my $new = sp->new( id => $id );
 	if( my $cert = &get_certificate( $new->hostname ) ){
 	    $new->keydescriptors( [ $cert ] );
 	    push( @sp, $new );
+	    warn sprintf( "The new SP is added: id=%s, serial=%s\n", $new->id, $cert->serial );
 	} else {
-	    warn sprintf( 'Failed to add the new SP: id=%s', $new->id );
+	    die sprintf( "Failed to add the new SP: id=%s\n", $new->id );
 	}
     }
     my %remove;
-    for my $id ( @REMOVE ){
+    for my $id ( @REMOVESP ){
 	$remove{$id}++;
     }
-    @sp = grep( ! $remove{$_->id}, @sp );
+    my @buf;
+    for my $sp ( @sp ){
+	if( $remove{$sp->id} ){
+	    warn sprintf( "The SP is removed: id=%s\n", $sp->id );
+	} else {
+	    push( @buf, $sp );
+	}
+    }
+    @sp = @buf;
+
+    for my $certfile ( @ADDCERT ){
+	my $cert = certificate->new_from_file( $certfile )
+	    or die sprintf( "Broken certificate: file=%s\n", $certfile );
+	for my $sp ( @sp ){
+	    if( grep( $cert->subject eq $_->subject, @{$sp->keydescriptors} ) ){
+		push( @{$sp->keydescriptors}, $cert );
+		warn sprintf( "The key descriptor is added: id=%s, file=%s, serial=%s\n",
+			      $sp->id, $certfile, $cert->serial );
+	    }
+	}
+    }
+    for my $certfile ( @REMOVECERT ){
+	my $cert = certificate->new_from_file( $certfile )
+	    or die sprintf( "Broken certificate: file=%s\n", $certfile );
+	for my $sp ( @sp ){
+	    if( grep( $cert->subject eq $_->subject, @{$sp->keydescriptors} ) ){
+		$sp->keydescriptors( [ grep( $cert->issuer ne $_->issuer || $cert->serial ne $_->serial,
+					     @{$sp->keydescriptors} ) ] );
+		warn sprintf( "The key descriptor is removed: id=%s, file=%s, serial=%s\n",
+			      $sp->id, $certfile, $cert->serial );
+	    }
+	    unless( @{$sp->keydescriptors} ){
+		die sprintf( "The SP has no valid key descriptor: id=%s\n", $sp->id );
+	    }
+	}
+    }
     @sp;
+}
+
+sub HTML::Template::safeparam {
+    my( $tmpl, $name, $value ) = @_;
+    if( $tmpl->query( name => $name ) ){
+	if( $value ){
+	    $tmpl->param( $name => $value );
+	} else {
+	    die sprintf( "%s option is not specified.\n", $name );
+	}
+	$value;
+    } else {
+	undef;
+    }
+}
+
+sub idp_status_update {
+    my( $tmpl ) = @_;
+    my $idpcert;
+    if( $IDPCERTIFICATE ){
+	$idpcert = certificate->new_from_file( $IDPCERTIFICATE ) or die;
+    } else {
+	$idpcert = &get_certificate( $IDPHOSTNAME ) or die;
+    }
+    $tmpl->safeparam( idpcert => $idpcert->data );
+    if( $tmpl->query( name => 'sp_entities' ) eq 'LOOP' ){
+	$tmpl->param( sp_entities =>
+		      [ map( { hostname => $_->hostname,
+			       id => $_->id,
+			       keydescriptors => [ map( { data => $_->data }, @{$_->keydescriptors} ) ] },
+			     &sp_entities() ) ] );
+    }
 }
 
 sub keyfile {
@@ -210,7 +291,7 @@ sub keyfile {
     $x;
 }
 
-sub sp_status_check {
+sub sp_status_update {
     my( $tmpl ) = @_;
     my( $sp ) = grep( $_->hostname eq $SPHOSTNAME, &current_sps( $METADATAURL ) );
     my $dir = &catfile( $ARCHIVEDIR, $SPHOSTNAME );
@@ -236,6 +317,7 @@ sub sp_status_check {
 	}
     }
 
+    $tmpl->param( hostname => $SPHOSTNAME );
     if( $oldcert ){
 	if( &sp_cert_exists( $sp, $newcert ) ){
 	    $tmpl->param( credentials => [ { certfile => $newcertfile,
@@ -260,31 +342,24 @@ sub sp_status_check {
 }
 
 sub main {
-    my $tmpl = HTML::Template->new( filename => $TEMPLATE, die_on_bad_params => 0 );
-    $tmpl->param( metadataurl => $METADATAURL );
-    $tmpl->param( metadatabasename => &basename($METADATAURL) );
-    $tmpl->param( domain => $DOMAIN );
-    $tmpl->param( organization => $ORGANIZATION );
-    $tmpl->param( idphostname => $IDPHOSTNAME );
-    $tmpl->param( idpid => $IDPID );
-    if( $SPHOSTNAME ){
-	$tmpl->param( hostname => $SPHOSTNAME );
-	&sp_status_check( $tmpl );
-    } else {
-	my $idpcert;
-	if( $IDPCERTIFICATE ){
-	    $idpcert = certificate->new_from_file( $IDPCERTIFICATE ) or die;
-	} else {
-	    $idpcert = &get_certificate( $IDPHOSTNAME ) or die;
-	}
-	$tmpl->param( idpcert => $idpcert->data );
-	$tmpl->param( sp_entities =>
-		      [ map( { hostname => $_->hostname,
-			       id => $_->id,
-			       keydescriptors => [ map( { data => $_->data }, @{$_->keydescriptors} ) ] },
-			     &sp_entities() ) ] );
+    if( -f $CONFFILE ){
+	require $CONFFILE or die;
     }
-    if ( $OUTPUT ){
+    $IDPID ||= sprintf( 'https://%s/idp/shibboleth', $IDPHOSTNAME ) if $IDPHOSTNAME;
+
+    my $tmpl = HTML::Template->new( filename => $TEMPLATE );
+    $tmpl->safeparam( metadataurl => $METADATAURL );
+    $tmpl->safeparam( metadatabasename => &basename($METADATAURL) );
+    $tmpl->safeparam( idphostname => $IDPHOSTNAME );
+    $tmpl->safeparam( idpid => $IDPID );
+    $tmpl->safeparam( domain => $DOMAIN );
+    $tmpl->safeparam( organization => $ORGANIZATION );
+    if( $SPHOSTNAME ){
+	&sp_status_update( $tmpl );
+    } else {
+	&idp_status_update( $tmpl );
+    }
+    if( $OUTPUT ){
 	open( my $fh, '>', $OUTPUT ) or die $!;
 	print $fh $tmpl->output;
     } else {
