@@ -27,7 +27,7 @@
 set -e
 
 hostname=`hostname --fqdn`
-confdir=/etc/shibboleth/
+confdir=/etc/shibboleth
 templatefile=${confdir}/shibboleth2.tmpl
 xmlfile=${confdir}/shibboleth2.xml
 idpid=https://idp.example.jp/idp/shibboleth
