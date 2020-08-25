@@ -155,7 +155,11 @@ sub get_metadata {
     my( $url ) = @_;
     my $ua = LWP::UserAgent->new();
     my $response = $ua->get( $url, verify_hostname => 1 );
-    $response->decoded_content;
+    if( $response->is_success ){
+	$response->decoded_content;
+    } else {
+	die sprintf( "Failed to retrieve metadata: url=%s, status=%s\n", $url, $response->status_line );
+    }
 }
 
 sub get_certificate {
