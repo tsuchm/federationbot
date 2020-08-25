@@ -20,7 +20,7 @@ our $IDPHOSTNAME;
 our $IDPID;
 our $IDPCERTIFICATE;
 our $METADATAURL;
-our $MARGIN = 60 * 60 * 24 * 7;
+our $MARGIN = 60 * 60 * 24 * 15;
 our $TEMPLATE = 'fed-metadata.tmpl';
 our @ADDSP;
 our @REMOVESP;
