@@ -184,8 +184,20 @@ sub sp_cert_exists {
 }
 
 sub sp_entities {
+    my %remove;
+    for my $id ( @REMOVESP ){
+	$remove{$id}++;
+    }
+    my @sp;
+    for my $sp ( &current_sps( $METADATAURL ) ){
+	if( $remove{$sp->id} ){
+	    warn sprintf( "The SP is removed: id=%s\n", $sp->id );
+	} else {
+	    push( @sp, $sp );
+	}
+    }
+
     my $limit = time + $MARGIN;
-    my( @sp ) = &current_sps( $METADATAURL );
     for my $sp ( @sp ){
 	if( my $cur = &get_certificate( $sp->hostname ) ){
 	    unless( &sp_cert_exists( $sp, $cur ) ){
@@ -214,19 +226,6 @@ sub sp_entities {
 	    die sprintf( "Failed to add the new SP: id=%s\n", $new->id );
 	}
     }
-    my %remove;
-    for my $id ( @REMOVESP ){
-	$remove{$id}++;
-    }
-    my @buf;
-    for my $sp ( @sp ){
-	if( $remove{$sp->id} ){
-	    warn sprintf( "The SP is removed: id=%s\n", $sp->id );
-	} else {
-	    push( @buf, $sp );
-	}
-    }
-    @sp = @buf;
 
     for my $certfile ( @ADDCERT ){
 	my $cert = certificate->new_from_file( $certfile )
