@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+    xmlns:xt="http://www.opensaml.org/xmltooling"
+    targetNamespace="http://www.opensaml.org/xmltooling"
+    elementFormDefault="qualified"
+    version="1.4">
+
+    <element name="exception" type="xt:XMLToolingExceptionType"/>
+    <complexType name="XMLToolingExceptionType">
+        <sequence>
+            <element name="message" type="string" minOccurs="0"/>
+            <element name="param" minOccurs="0" maxOccurs="unbounded">
+                <complexType>
+                    <simpleContent>
+                        <extension base="string">
+                            <attribute name="name" type="string" use="required"/>
+                        </extension>
+                    </simpleContent>
+                </complexType>
+            </element>
+        </sequence>
+        <attribute name="type" type="string" use="required"/>
+    </complexType>
+
+    <element name="URLInputSourceStatus" type="unsignedShort"/>
+
+</schema>
