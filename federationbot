@@ -63,7 +63,6 @@ sub sp::hostname {
 			  start => '$',
 			  end => '$',
 			  serial => '$',
-			  altname => '$',
 			  pem => '$' } );
 
 sub certificate::data {
@@ -92,7 +91,7 @@ sub certificate::new_from_pem {
 sub certificate::new_from_file {
     my( $class, $filename, $data ) = @_;
     my $new = $class->new();
-    open( my $ph, "openssl x509 -in $filename -noout -serial -issuer -subject -dates -ext subjectAltName 2>/dev/null|" ) or die $!;
+    open( my $ph, "openssl x509 -in $filename -noout -serial -issuer -subject -dates 2>/dev/null|" ) or die $!;
     while( <$ph> ){
 	s/\s+\Z//;
 	if( s/\Aserial=// ){
@@ -105,8 +104,6 @@ sub certificate::new_from_file {
 	    $new->start( scalar( &parsedate( $_ ) ) );
 	} elsif( s/\AnotAfter=// ){
 	    $new->end( scalar( &parsedate( $_ ) ) );
-	} elsif( s/\A\s*DNS:// ){
-	    $new->altname( [ split( /,\s*DNS:/, $_ ) ] );
 	}
     }
     unless( $data ){
