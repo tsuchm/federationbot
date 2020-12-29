@@ -24,6 +24,7 @@ our $MARGIN = 60 * 60 * 24 * 15;
 our $TEMPLATE = 'fed-metadata.tmpl';
 our @ADDSP;
 our @REMOVESP;
+our @SKIPSP;
 our @ADDCERT;
 our @REMOVECERT;
 our $SPHOSTNAME;
@@ -41,6 +42,7 @@ our $OUTPUT;
 	     'template=s'	=> \$TEMPLATE,
 	     'addsp=s@'		=> \@ADDSP,
 	     'removesp=s@'	=> \@REMOVESP,
+	     'skipsp=s@'	=> \@SKIPSP,
 	     'addcert=s@'	=> \@ADDCERT,
 	     'removecert=s@'	=> \@REMOVECERT,
 	     'sphostname=s'	=> \$SPHOSTNAME,
@@ -185,6 +187,10 @@ sub sp_entities {
     for my $id ( @REMOVESP ){
 	$remove{$id}++;
     }
+    my %skip;
+    for my $id ( @SKIPSP ){
+	$skip{$id}++;
+    }
     my @sp;
     for my $sp ( &current_sps( $METADATAURL ) ){
 	if( $remove{$sp->id} ){
@@ -196,6 +202,10 @@ sub sp_entities {
 
     my $limit = time + $MARGIN;
     for my $sp ( @sp ){
+	if( $skip{$sp->id} ){
+	    warn sprintf( "Update of the SP is skiped: id=%s\n", $sp->id );
+	    next;
+	}
 	if( my $cur = &get_certificate( $sp->hostname ) ){
 	    unless( &sp_cert_exists( $sp, $cur ) ){
 		unless( grep( $cur->subject eq $_->subject, @{$sp->keydescriptors} ) ){
