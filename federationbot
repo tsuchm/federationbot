@@ -28,6 +28,8 @@ our @SKIPSP;
 our @ADDCERT;
 our @REMOVECERT;
 our $SPHOSTNAME;
+our $SPCERTFILE;
+our $SPKEYFILE;
 our $ARCHIVEDIR = '/etc/letsencrypt/archive';
 our $CONFFILE = &abs_path( &catfile( &dirname( $PROGRAM_NAME ), 'federationbot.conf' ) );
 our $OUTPUT;
@@ -46,6 +48,8 @@ our $OUTPUT;
 	     'addcert=s@'	=> \@ADDCERT,
 	     'removecert=s@'	=> \@REMOVECERT,
 	     'sphostname=s'	=> \$SPHOSTNAME,
+	     'spcertfile=s'	=> \$SPCERTFILE,
+	     'spkeyfile=s'	=> \$SPKEYFILE,
 	     'archivedir=s'	=> \$ARCHIVEDIR,
 	     'conffile=s'	=> \$CONFFILE,
 	     'output=s'		=> \$OUTPUT );
@@ -66,6 +70,15 @@ sub sp::hostname {
 			  end => '$',
 			  serial => '$',
 			  pem => '$' } );
+
+sub certificate::cn {
+    my( $this ) = @_;
+    if( $this->subject =~ m/(?:,|\A)\s*CN\s*=\s*(.*?)\s*(?:,|\Z)/ ){
+	$1;
+    } else {
+	undef;
+    }
+}
 
 sub certificate::data {
     my( $this ) = @_;
@@ -208,7 +221,11 @@ sub sp_entities {
 	}
 	if( my $cur = &get_certificate( $sp->hostname ) ){
 	    unless( &sp_cert_exists( $sp, $cur ) ){
-		unless( grep( $cur->subject eq $_->subject, @{$sp->keydescriptors} ) ){
+		# Relax the condition for checking whether two certificates point to the same server.
+		# The 1st reason is to support the change to remove OUs from certificate subjects by UPKI,
+		# for more detail see https://certs.nii.ac.jp/news/20220603-0
+		# The 2nd reason is to transfer certificates issued by UPKI to those issued by Let's Encrypt.
+		unless( grep( $cur->cn eq $_->cn, @{$sp->keydescriptors} ) ){
 		    die sprintf( "Mismatch subject of certificate: id=%s\n", $sp->id );
 		}
 		push( @{$sp->keydescriptors}, $cur );
@@ -303,51 +320,57 @@ sub keyfile {
 
 sub sp_status_update {
     my( $tmpl ) = @_;
-    my( $sp ) = grep( $_->hostname eq $SPHOSTNAME, &current_sps( $METADATAURL ) );
-    my $dir = &catfile( $ARCHIVEDIR, $SPHOSTNAME );
-    opendir( my $dh, $dir ) or die $!;
-    my( @certfile ) = map( $_->[1],
-			   sort( { $b->[0] <=> $a->[0] }
-				 map( m/\Acert(\d+)\.pem/ && [ $1, $_ ],
-				      grep( m/\Acert\d+\.pem/, readdir($dh) ) ) ) );
-    my $newcertfile = &catfile( $dir, shift @certfile );
-    my $newcert = certificate->new_from_file( $newcertfile )
-	|| die sprintf("Cannot open the newest certificate: file=%s", $newcertfile );
-
-    my $oldcertfile;
-    my $oldcert;
-    for my $file ( @certfile ){
-	$file = &catfile( $dir, $file );
-	my $cert = certificate->new_from_file( $file )
-	    || die sprintf("Cannot open the old certificate: file=%s", $file );
-	if( $sp and &sp_cert_exists( $sp, $cert ) ){
-	    $oldcertfile = $file;
-	    $oldcert = $cert;
-	    last;
-	}
-    }
-
     $tmpl->param( hostname => $SPHOSTNAME );
-    if( $oldcert ){
-	if( &sp_cert_exists( $sp, $newcert ) ){
-	    $tmpl->param( credentials => [ { certfile => $newcertfile,
-					     keyfile => &keyfile($newcertfile),
-					     encrypt => 0 },
-					   { certfile => $oldcertfile,
-					     keyfile => &keyfile($oldcertfile),
-					     encrypt => 1 } ] );
-	} else {
-	    $tmpl->param( credentials => [ { certfile => $newcertfile,
-					     keyfile => &keyfile($newcertfile),
-					     encrypt => 1 },
-					   { certfile => $oldcertfile,
-					     keyfile => &keyfile($oldcertfile),
-					     encrypt => 0 } ] );
-	}
-    } else {
+    if( $SPCERTFILE and $SPKEYFILE ){
 	$tmpl->param( credentials => [] );
-	$tmpl->param( certfile => $newcertfile );
-	$tmpl->param( keyfile => &keyfile($newcertfile) );
+	$tmpl->param( certfile => $SPCERTFILE );
+	$tmpl->param( keyfile => $SPKEYFILE );
+    } else {
+	my( $sp ) = grep( $_->hostname eq $SPHOSTNAME, &current_sps( $METADATAURL ) );
+	my $dir = &catfile( $ARCHIVEDIR, $SPHOSTNAME );
+	opendir( my $dh, $dir ) or die $!;
+	my( @certfile ) = map( $_->[1],
+			       sort( { $b->[0] <=> $a->[0] }
+				     map( m/\Acert(\d+)\.pem/ && [ $1, $_ ],
+					  grep( m/\Acert\d+\.pem/, readdir($dh) ) ) ) );
+	my $newcertfile = &catfile( $dir, shift @certfile );
+	my $newcert = certificate->new_from_file( $newcertfile )
+	    || die sprintf("Cannot open the newest certificate: file=%s", $newcertfile );
+
+	my $oldcertfile;
+	my $oldcert;
+	for my $file ( @certfile ){
+	    $file = &catfile( $dir, $file );
+	    my $cert = certificate->new_from_file( $file )
+		|| die sprintf("Cannot open the old certificate: file=%s", $file );
+	    if( $sp and &sp_cert_exists( $sp, $cert ) ) {
+		$oldcertfile = $file;
+		$oldcert = $cert;
+		last;
+	    }
+	}
+
+	if( $oldcert ){
+	    if( &sp_cert_exists( $sp, $newcert ) ){
+		$tmpl->param( credentials => [ { certfile => $newcertfile,
+						 keyfile => &keyfile($newcertfile),
+						 encrypt => 0 },
+					       { certfile => $oldcertfile,
+						 keyfile => &keyfile($oldcertfile),
+						 encrypt => 1 } ] );
+	    } else {
+		$tmpl->param( credentials => [ { certfile => $newcertfile,
+						 keyfile => &keyfile($newcertfile),
+						 encrypt => 1 },
+					       { certfile => $oldcertfile,
+						 keyfile => &keyfile($oldcertfile),
+						 encrypt => 0 } ] );
+	    }
+	} else {
+	    $tmpl->param( credentials => [] );
+	    $tmpl->param( certfile => $newcertfile );
+	    $tmpl->param( keyfile => &keyfile($newcertfile) );
+	}
     }
 }
 
